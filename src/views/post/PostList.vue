@@ -24,9 +24,9 @@
             >
               <a-form-item label="文章状态：">
                 <a-select
-                  v-model="queryParam.status"
+                  v-model="selectStatus"
                   placeholder="请选择文章状态"
-                  @change="handleQuery()"
+                  @change="onStatusSelectChange"
                 >
                   <a-select-option
                     v-for="status in Object.keys(postStatus)"
@@ -41,16 +41,15 @@
               :sm="24"
             >
               <a-form-item label="分类目录：">
-                <a-select
-                  v-model="queryParam.categoryId"
+                <a-tree-select
+                  v-model="treeSelectValue"
+                  style="width: 100%"
+                  :dropdown-style="{ maxHeight: '400px', overflow: 'auto' }"
+                  :tree-data="categoryTree"
                   placeholder="请选择分类"
-                  @change="handleQuery()"
-                >
-                  <a-select-option
-                    v-for="category in categories"
-                    :key="category.id"
-                  >{{ category.name }} ({{ category.postCount }})</a-select-option>
-                </a-select>
+                  tree-default-expand-all
+                  @change="onTreeSelectChange"
+                />
               </a-form-item>
             </a-col>
 
@@ -101,7 +100,7 @@
                 href="javascript:void(0);"
                 @click="handleEditStatusMore(postStatus.RECYCLE.value)"
               >
-                <span>移到回收站</span>
+                <span>移入回收站</span>
               </a>
             </a-menu-item>
             <a-menu-item
@@ -125,6 +124,69 @@
               >
                 <span>永久删除</span>
               </a>
+            </a-menu-item>
+            <a-sub-menu
+              key="5"
+              title="开启评论"
+              v-if="queryParam.status === 'PUBLISHED' || queryParam.status === 'INTIMATE'"
+            >
+              <a-menu-item>
+                <a
+                  href="javascript:void(0);"
+                  @click="handleDisallowComment(false)"
+                >
+                  <span>开启</span>
+                </a>
+              </a-menu-item>
+              <a-menu-item>
+                <a
+                  href="javascript:void(0);"
+                  @click="handleDisallowComment(true)"
+                >
+                  <span>关闭</span>
+                </a>
+              </a-menu-item>
+            </a-sub-menu>
+            <a-sub-menu
+              key="6"
+              title="是否置顶"
+              v-if="queryParam.status === 'PUBLISHED' || queryParam.status === 'INTIMATE'"
+            >
+              <a-menu-item>
+                <a
+                  href="javascript:void(0);"
+                  @click="handleTopPriority(1)"
+                >
+                  <span>是</span>
+                </a>
+              </a-menu-item>
+              <a-menu-item>
+                <a
+                  href="javascript:void(0);"
+                  @click="handleTopPriority(0)"
+                >
+                  <span>否</span>
+                </a>
+              </a-menu-item>
+            </a-sub-menu>
+            <a-menu-divider
+              v-if="queryParam.status === 'PUBLISHED' || queryParam.status === 'INTIMATE'"
+            />
+            <a-menu-item
+              key="7"
+              v-if="queryParam.status === 'PUBLISHED' || queryParam.status === 'INTIMATE'"
+            >
+              <a-popover placement="right">
+                <template slot="content">
+                  设置分类 & 标签 & 加密
+                </template>
+                <a
+                  href="javascript:void(0);"
+                  @click="handleShowBatchOperation"
+                >
+                  <span>更多操作</span>
+                </a>
+              </a-popover>
             </a-menu-item>
           </a-menu>
           <a-button style="margin-left: 8px;">
@@ -506,6 +568,13 @@
       :id="selectedPost.id"
       @close="onPostCommentsClose"
     />
+
+    <BatchOperationDrawer
+      :posts="selectedPosts"
+      :postIds="selectedRowKeys"
+      :visible="batchOperationVisible"
+      @close="onBatchOperationClose"
+    />
   </div>
 </template>
 
@@ -513,7 +582,7 @@
 import { mixin, mixinDevice } from '@/utils/mixin.js'
 import PostSettingDrawer from './components/PostSettingDrawer'
 import TargetCommentDrawer from '../comment/components/TargetCommentDrawer'
-import AttachmentSelectDrawer from '../attachment/components/AttachmentSelectDrawer'
+import BatchOperationDrawer from './components/BatchOperationDrawer'
 import TagSelect from './components/TagSelect'
 import CategoryTree from './components/CategoryTree'
 import categoryApi from '@/api/category'
@@ -570,16 +639,17 @@ const columns = [
 export default {
   name: 'PostList',
   components: {
-    AttachmentSelectDrawer,
     TagSelect,
     CategoryTree,
     PostSettingDrawer,
-    TargetCommentDrawer
+    TargetCommentDrawer,
+    BatchOperationDrawer
   },
   mixins: [mixin, mixinDevice],
   data() {
     return {
-      postStatus: postApi.postStatus,
+      // unshift an option of all post
+      postStatus: Object.assign({}, { ALL: { text: '所有文章' } }, postApi.postStatus),
       pagination: {
         page: 1,
         size: 10,
@@ -608,9 +678,13 @@ export default {
       postsLoading: false,
       postSettingVisible: false,
       postCommentVisible: false,
+      batchOperationVisible: false,
       selectedPost: {},
       selectedTagIds: [],
-      selectedCategoryIds: []
+      selectedCategoryIds: [],
+      treeSelectValue: '所有分类',
+      selectStatus: 'ALL',
+      selectedPosts: []
     }
   },
   computed: {
@@ -619,6 +693,16 @@ export default {
         post.statusProperty = this.postStatus[post.status]
         return post
       })
+    },
+    categoryTree() {
+      const tree = categoryApi.concreteTree(this.categories)
+      // insert a parent node of all category
+      return [{
+        key: 0,
+        title: '所有分类',
+        value: '所有分类',
+        children: tree
+      }]
     }
   },
   created() {
@@ -701,6 +785,8 @@ export default {
       this.queryParam.keyword = null
       this.queryParam.categoryId = null
       this.queryParam.status = null
+      this.selectStatus = 'ALL'
+      this.treeSelectValue = '所有分类'
       this.handleClearRowKeys()
       this.handlePaginationChange(1, this.pagination.size)
     },
@@ -727,6 +813,17 @@ export default {
       }
       postApi.updateStatusInBatch(this.selectedRowKeys, status).then(response => {
         this.$log.debug(`postId: ${this.selectedRowKeys}, status: ${status}`)
+        switch (status) {
+          case postApi.postStatus.PUBLISHED.value:
+            this.$message.success('发布成功！')
+            break
+          case postApi.postStatus.DRAFT.value:
+            this.$message.success('设置草稿成功！')
+            break
+          case postApi.postStatus.RECYCLE.value:
+            this.$message.success('移入回收站成功！')
+            break
+        }
         this.selectedRowKeys = []
         this.loadPosts()
       })
@@ -739,6 +836,39 @@ export default {
       postApi.deleteInBatch(this.selectedRowKeys).then(response => {
         this.$log.debug(`delete: ${this.selectedRowKeys}`)
         this.selectedRowKeys = []
+        this.$message.success('永久删除成功！')
+        this.loadPosts()
+      })
+    },
+    handleDisallowComment(disallowComment) {
+      if (this.selectedRowKeys.length <= 0) {
+        this.$message.info('请至少选择一项！')
+        return
+      }
+      postApi.updateDisallowCommentInBatch(this.selectedRowKeys, disallowComment).then(response => {
+        this.$log.debug(`postId: ${this.selectedRowKeys}, disallowComment: ${disallowComment}`)
+        this.selectedRowKeys = []
+        if (disallowComment) {
+          this.$message.success('关闭评论成功！')
+        } else {
+          this.$message.success('开启评论成功！')
+        }
+        this.loadPosts()
+      })
+    },
+    handleTopPriority(topPriority) {
+      if (this.selectedRowKeys.length <= 0) {
+        this.$message.info('请至少选择一项！')
+        return
+      }
+      postApi.updateTopPriorityInBatch(this.selectedRowKeys, topPriority).then(response => {
+        this.$log.debug(`postId: ${this.selectedRowKeys}, topPriority: ${topPriority}`)
+        this.selectedRowKeys = []
+        if (topPriority === 1) {
+          this.$message.success('置顶成功！')
+        } else {
+          this.$message.success('取消置顶成功！')
+        }
         this.loadPosts()
       })
     },
@@ -755,6 +885,16 @@ export default {
       postApi.get(post.id).then(response => {
         this.selectedPost = response.data.data
         this.postCommentVisible = true
+      })
+    },
+    handleShowBatchOperation() {
+      if (this.selectedRowKeys.length <= 0) {
+        this.$message.info('请至少选择一项！')
+        return
+      }
+      postApi.getPosts(this.selectedRowKeys).then(response => {
+        this.selectedPosts = response.data.data
+        this.batchOperationVisible = true
       })
     },
     handlePreview(postId) {
@@ -780,6 +920,12 @@ export default {
         this.loadPosts()
       }, 500)
     },
+    onBatchOperationClose() {
+      this.batchOperationVisible = false
+      setTimeout(() => {
+        this.loadPosts()
+      }, 500)
+    },
     onRefreshPostFromSetting(post) {
       this.selectedPost = post
     },
@@ -791,6 +937,19 @@ export default {
     },
     onRefreshPostMetasFromSetting(metas) {
       this.selectedMetas = metas
+    },
+    onTreeSelectChange(value) {
+      if (value === '所有分类') {
+        this.queryParam.categoryId = null
+      } else {
+        const id = this.categories.filter(category => category.name === value)[0].id
+        this.queryParam.categoryId = id
+      }
+      this.handleQuery()
+    },
+    onStatusSelectChange(value) {
+      this.queryParam.status = value === 'ALL' ? null : value
+      this.handleQuery()
     }
   }
 }

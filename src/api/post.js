@@ -29,6 +29,16 @@ postApi.get = postId => {
   })
 }
 
+postApi.getPosts = postIds => {
+  return service({
+    url: `${baseUrl}/posts`,
+    method: 'get',
+    params: {
+      ids: postIds + ''
+    }
+  })
+}
+
 postApi.create = (postToCreate, autoSave) => {
   return service({
     url: baseUrl,
@@ -72,6 +82,30 @@ postApi.updateStatusInBatch = (ids, status) => {
   return service({
     url: `${baseUrl}/status/${status}`,
     data: ids,
+    method: 'put'
+  })
+}
+
+postApi.updateDisallowCommentInBatch = (ids, disallowComment) => {
+  return service({
+    url: `${baseUrl}/disallow_comment/${disallowComment}`,
+    data: ids,
+    method: 'put'
+  })
+}
+
+postApi.updateTopPriorityInBatch = (ids, topPriority) => {
+  return service({
+    url: `${baseUrl}/top_priority/${topPriority}`,
+    data: ids,
+    method: 'put'
+  })
+}
+
+postApi.updataSettingInBatch = settingParams => {
+  return service({
+    url: `${baseUrl}/setting`,
+    data: settingParams,
     method: 'put'
   })
 }
